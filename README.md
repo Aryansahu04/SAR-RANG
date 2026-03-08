@@ -11,13 +11,11 @@
 - [Tech Stack](#tech-stack)
 - [Model](#model)
 - [Project Structure](#project-structure)
-- [Model Weights](#model-Weights)
 - [Pages & Routing](#pages--routing)
 - [Backend (Edge Functions)](#backend-edge-functions)
 - [Environment Variables & Secrets](#environment-variables--secrets)
 - [Getting Started](#getting-started)
 - [Deployment](#deployment)
-- [License](#license)
 
 ---
 
@@ -54,22 +52,34 @@
 | Backend           | Supabase Edge Functions (Deno)       |
 | Forms             | Web3Forms API                        |
 | Model Training    | PyTorch (Pix2Pix Conditional GAN)    |
-| Inference Hosting | Hugging Face Inference Endpoint      |
+| Inference Hosting | Hugging Face Gradio Space (public)   |
 
 ---
 
 ## Model
 
-The colorization model is a custom-trained Pix2Pix Conditional GAN implemented in PyTorch.
+The colorization model is a custom-trained **Pix2Pix Conditional GAN** implemented in PyTorch.
 
-- Generator: U-Net architecture
-- Discriminator: PatchGAN
-- Loss Function: Adversarial Loss + L1 Reconstruction Loss
-- Output: Scientifically meaningful color mapping based on SAR backscatter properties
+### Architecture
 
-The trained weights are exported as a `.pth` checkpoint and deployed for inference using a Hugging Face endpoint.
+| Component       | Details                                                                 |
+| --------------- | ----------------------------------------------------------------------- |
+| **Generator**   | U-Net with skip connections for preserving spatial detail               |
+| **Discriminator** | PatchGAN — classifies overlapping image patches as real or fake       |
+| **Input**       | Single-channel grayscale SAR backscatter image                          |
+| **Output**      | 3-channel colorized image with scientifically meaningful color mapping  |
 
-The model does **not** generate optical imagery — it learns a reflectance-to-color mapping preserving radar characteristics.
+### Training Pipeline
+
+1. **Ground Truth Generation:** IHS (Intensity-Hue-Saturation) fusion is used — the SAR intensity channel replaces the I-channel of co-registered optical imagery to create paired training data.
+2. **Loss Function:** Combined adversarial loss + L1 pixel-wise reconstruction loss, ensuring both realistic texture and pixel-level accuracy.
+3. **Goal:** The model learns a radar-backscatter-to-color mapping that preserves SAR characteristics — it does **not** synthesize optical imagery.
+
+### Inference
+
+- Inference is served via a **public Hugging Face Gradio Space**.
+- The frontend calls the Gradio endpoint directly — **no backend proxy or API key is required**.
+- Processing is lightweight and runs on the Hugging Face-hosted GPU.
 
 ---
 
@@ -96,20 +106,9 @@ The model does **not** generate optical imagery — it learns a reflectance-to-c
 ├── supabase/
 │   ├── config.toml
 │   └── functions/
-│       ├── colorize-sar/
 │       └── send-contact/
 └── .env.example
 ```
-
----
-
-## Model Weights
-
-The trained model checkpoint is provided in this repository:
-model/sar-rang-generator.pth
-This file contains the learned weights of the Pix2Pix generator network and can be used for local inference or fine-tuning.
-
-> Note: Due to GitHub file size limits, large checkpoints may be stored using Git LFS.
 
 ---
 
@@ -132,13 +131,6 @@ This file contains the learned weights of the Pix2Pix generator network and can 
 ---
 
 ## Backend (Edge Functions)
-
-### `colorize-sar`
-
-- **Purpose:** Receives an uploaded SAR image, sends it to the deployed inference model, and returns a base64 colorized result.
-- **Inference Source:** Custom trained model (.pth) hosted via Hugging Face endpoint
-- **Auth:** Public (no JWT required)
-- **Required Secret:** `HF_MODEL_API_KEY`
 
 ### `send-contact`
 
@@ -166,7 +158,6 @@ These must be set as Supabase secrets (via CLI or dashboard) for edge functions 
 
 | Secret                      | Required By    | How to Obtain                             |
 | --------------------------- | -------------- | ----------------------------------------- |
-| `HF_MODEL_API_KEY`          | `colorize-sar` | Deploy the model → Get access key         |
 | `WEB3FORMS_ACCESS_KEY`      | `send-contact` | Sign up at web3forms.com → Get access key |
 | `SUPABASE_URL`              | Auto-provided  | Automatically set by Supabase             |
 | `SUPABASE_ANON_KEY`         | Auto-provided  | Automatically set by Supabase             |
@@ -196,7 +187,6 @@ cp .env.example .env
 # Edit .env with your Supabase credentials
 
 # 4. Set Supabase secrets (for edge functions)
-npx supabase secrets set HF_MODEL_API_KEY=your_key_here
 npx supabase secrets set WEB3FORMS_ACCESS_KEY=your_key_here
 
 # 5. Start the dev server
@@ -223,8 +213,7 @@ npx supabase functions serve
 
 1. Build the frontend: `npm run build`
 2. Deploy the `dist/` folder to any static host (Vercel, Netlify, Cloudflare Pages, Lovable, etc.)
-3. Deploy the provided `.pth` model checkpoint to a Hugging Face Inference Endpoint (or run locally with PyTorch) and configure the `HF_MODEL_API_KEY`.
-4. Deploy edge functions to your Supabase project: `npx supabase functions deploy`
-5. Ensure all secrets are configured in your Supabase project.
+3. Deploy edge functions to your Supabase project: `npx supabase functions deploy`
+4. Ensure all secrets are configured in your Supabase project.
 
 ---
