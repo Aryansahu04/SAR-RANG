@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Upload, Download, Loader2, AlertCircle, ImageIcon } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+
 import example1Grayscale from "@/assets/grayscale-1.png";
 import example1Colorized from "@/assets/coloured-1.png";
 import example2Grayscale from "@/assets/grayscale-2.png";
@@ -90,28 +90,83 @@ const SarRangDemo = () => {
     setError(null);
     setLoading(true);
 
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
+    const API_BASE = "https://anni00710-sar2optical.hf.space";
 
-      const { data, error: fnError } = await supabase.functions.invoke('colorize-sar', {
-        body: formData,
+    try {
+      // Step 1: Upload file to Gradio's upload endpoint
+      const uploadForm = new FormData();
+      uploadForm.append("files", file, file.name);
+
+      const uploadResponse = await fetch(`${API_BASE}/gradio_api/upload`, {
+        method: "POST",
+        body: uploadForm,
       });
 
-      if (fnError) {
-        throw new Error(fnError.message || 'Processing failed');
+      if (!uploadResponse.ok) {
+        if (uploadResponse.status === 503) {
+          throw new Error("The SAR colorization service is currently unavailable. Please try again in a few minutes.");
+        }
+        throw new Error(`Upload failed (${uploadResponse.status})`);
       }
 
-      if (data?.error) {
-        throw new Error(data.error);
+      const uploadedFiles: string[] = await uploadResponse.json();
+      if (!uploadedFiles?.[0]) throw new Error("Failed to upload image to the service.");
+
+      // Step 2: Submit the job referencing the uploaded file
+      const submitResponse = await fetch(`${API_BASE}/gradio_api/call/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [{
+            path: uploadedFiles[0],
+            orig_name: file.name,
+            size: file.size,
+            mime_type: file.type || "image/png",
+            meta: { _type: "gradio.FileData" },
+          }],
+        }),
+      });
+
+      if (!submitResponse.ok) {
+        if (submitResponse.status === 503) {
+          throw new Error("The SAR colorization service is currently unavailable. Please try again in a few minutes.");
+        }
+        const errText = await submitResponse.text().catch(() => "");
+        throw new Error(errText || `Server error (${submitResponse.status})`);
       }
 
-      const imageUrl = data?.imageUrl;
-      if (!imageUrl) {
-        throw new Error('No colorized image returned from the API.');
+      const submitData = await submitResponse.json();
+      const eventId = submitData?.event_id;
+      if (!eventId) throw new Error("Failed to submit image for processing.");
+
+      // Step 3: Poll for result via SSE
+      const resultResponse = await fetch(`${API_BASE}/gradio_api/call/convert/${eventId}`);
+      if (!resultResponse.ok) throw new Error(`Failed to retrieve result (${resultResponse.status})`);
+
+      const resultText = await resultResponse.text();
+      const lines = resultText.split("\n");
+
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("event: error")) {
+          const dataLine = lines[i + 1];
+          const errMsg = dataLine?.startsWith("data: ") ? dataLine.slice(6) : "Processing failed.";
+          throw new Error(errMsg === "null" ? "The model failed to process this image." : errMsg);
+        }
+        if (lines[i].startsWith("event: complete")) {
+          const dataLine = lines[i + 1];
+          if (dataLine?.startsWith("data: ")) {
+            const parsed = JSON.parse(dataLine.slice(6));
+            const output = parsed?.[0] ?? parsed?.data?.[0];
+            if (output?.url) {
+              setResult(output.url);
+              return;
+            }
+          }
+          break;
+        }
       }
 
-      setResult(imageUrl);
+      throw new Error("No colorized image returned. Please try a different SAR image.");
     } catch (err: any) {
       setError(err.message || "An error occurred while processing the image. Please try again.");
     } finally {
@@ -119,12 +174,23 @@ const SarRangDemo = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!result) return;
-    const a = document.createElement("a");
-    a.href = result;
-    a.download = `colorized-${file?.name || "result.png"}`;
-    a.click();
+    try {
+      const response = await fetch(result);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `colorized-${file?.name || "result.png"}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open in new tab
+      window.open(result, "_blank");
+    }
   };
 
   return (
@@ -239,12 +305,32 @@ const SarRangDemo = () => {
             </div>
           )}
 
-          {/* Input Preview */}
+          {/* Previews Side by Side */}
           {preview && (
             <div className="mb-8">
-              <p className="text-sm font-medium mb-2">Input Preview</p>
-              <div className="glass rounded-xl p-2 inline-block">
-                <img src={preview} alt="Uploaded SAR input" className="max-h-64 rounded-lg" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Input */}
+                <div>
+                  <p className="text-sm font-medium mb-2">SAR Input</p>
+                  <div className="glass rounded-xl p-2">
+                    <img src={preview} alt="Uploaded SAR input" className="rounded-lg w-full h-64 object-cover" />
+                  </div>
+                </div>
+
+                {/* Output */}
+                <div>
+                  <p className="text-sm font-medium mb-2">Colorized Output</p>
+                  <div className="glass rounded-xl p-2 h-[calc(100%-1.75rem)] flex items-center justify-center">
+                    {result ? (
+                      <img src={result} alt="Colorized SAR output" className="rounded-lg w-full h-64 object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground/50 py-10">
+                        <ImageIcon className="h-8 w-8" />
+                        <span className="text-sm">Result will appear here</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -274,19 +360,26 @@ const SarRangDemo = () => {
             </div>
           )}
 
-          {/* Result */}
+          {/* Download */}
           {result && (
-            <div className="space-y-4">
-              <h2 className="font-display text-lg font-semibold">Colorized Output</h2>
-              <div className="glass rounded-xl p-2 inline-block">
-                <img src={result} alt="Colorized SAR output" className="max-h-80 rounded-lg" />
-              </div>
-              <div>
-                <Button variant="outline" size="lg" onClick={handleDownload}>
-                  <Download className="h-5 w-5" />
-                  Download Result
-                </Button>
-              </div>
+            <div className="flex gap-3">
+              <Button variant="outline" size="lg" onClick={handleDownload}>
+                <Download className="h-5 w-5" />
+                Download Result
+              </Button>
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={() => {
+                  setFile(null);
+                  setPreview(null);
+                  setResult(null);
+                  setError(null);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              >
+                Test Another
+              </Button>
             </div>
           )}
         </div>

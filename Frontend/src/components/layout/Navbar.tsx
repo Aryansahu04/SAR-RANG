@@ -21,14 +21,20 @@ export const Navbar = () => {
   const location = useLocation();
   const navRef = useRef<HTMLElement>(null);
 
+  const isHome = location.pathname === "/";
+
   useEffect(() => {
     if (!navRef.current) return;
-    gsap.fromTo(
-      navRef.current,
-      { y: -80, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.8, delay: 2.8, ease: "power3.out" }
-    );
-  }, []);
+    if (isHome) {
+      gsap.fromTo(
+        navRef.current,
+        { y: -80, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, delay: 2.8, ease: "power3.out" }
+      );
+    } else {
+      gsap.set(navRef.current, { y: 0, opacity: 1 });
+    }
+  }, [isHome]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -45,7 +51,7 @@ export const Navbar = () => {
           ? "glass-strong border-primary/10 shadow-lg shadow-primary/5"
           : "glass border-border/30"
       )}
-      style={{ opacity: 0 }}
+      style={{ opacity: isHome ? 0 : 1 }}
     >
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
@@ -53,18 +59,14 @@ export const Navbar = () => {
           <Link to="/" className="flex items-center gap-3 group">
             <img
               src={logo}
-              alt="SAR-RANG Logo"
-              className="h-9 w-9 object-contain transition-transform duration-300 group-hover:scale-105"
+              alt="SAR‑RANG Logo"
+              className="h-[99px] w-[99px] md:h-[120px] md:w-[120px] object-contain
+               transition-transform duration-300 group-hover:scale-105"
             />
-            <span className="font-display font-bold text-lg tracking-wide">
-              <span className="text-foreground">SAR</span>
-              <span className="text-muted-foreground">-</span>
-              <span className="bg-gradient-to-r from-primary via-accent to-gold bg-clip-text text-transparent">RANG</span>
-            </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="flex items-center gap-1">
             {navLinks.map((link) => (
               <Link
                 key={link.href}

@@ -1,4 +1,1 @@
 project_id = "uvtxphmjtduqdukoapnj"
-
-[functions.colorize-sar]
-verify_jwt = false

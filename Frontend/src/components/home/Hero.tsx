@@ -1,13 +1,10 @@
-import { useEffect, useRef, lazy, Suspense } from "react";
+import { useEffect, useRef } from "react";
 import { ArrowRight, Radar, Cpu, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import gsap from "gsap";
 import { useMagnetic } from "@/hooks/useGsapAnimations";
-
-const SolarSystem = lazy(() =>
-  import("@/components/three/SolarSystem").then((m) => ({ default: m.SolarSystem }))
-);
+import { ShaderBackground } from "@/components/ui/animated-shader-hero";
 
 export const Hero = () => {
   const sectionRef = useRef<HTMLElement>(null);
@@ -69,10 +66,8 @@ export const Hero = () => {
 
   return (
     <section ref={sectionRef} className="relative min-h-[90vh] flex items-center overflow-hidden">
-      {/* Three.js Solar System Background */}
-      <Suspense fallback={null}>
-        <SolarSystem />
-      </Suspense>
+      {/* WebGL Shader Background */}
+      <ShaderBackground className="z-[0]" />
 
       {/* Fallback gradient */}
       <div className="absolute inset-0 bg-gradient-hero z-[0]" style={{ opacity: 0.4 }} />
@@ -84,7 +79,7 @@ export const Hero = () => {
       <div
         className="absolute inset-0 z-[2] pointer-events-none"
         style={{
-          background: "radial-gradient(ellipse at center, transparent 40%, hsl(222 98% 5%) 100%)",
+          background: "radial-gradient(ellipse at center, transparent 45%, hsl(15 35% 9%) 100%)",
         }}
       />
 
@@ -132,8 +127,7 @@ export const Hero = () => {
             </Button>
           </div>
 
-          <div ref={flowRef}>
-            <p className="text-sm text-muted-foreground mb-6">How It Works</p>
+          <div ref={flowRef} className="-mt-4">
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
               <div className="flow-card glass rounded-2xl p-6 w-48 card-hover" style={{ opacity: 0 }}>
                 <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-secondary flex items-center justify-center">
